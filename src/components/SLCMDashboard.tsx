@@ -767,7 +767,7 @@ export default function SLCMDashboard() {
                                 className="bg-white text-emerald-700 hover:bg-gray-100 font-semibold px-8 py-6 text-lg rounded-xl shadow-lg"
                                 asChild
                             >
-                                <a href="https://slcm.org/donate" target="_blank" rel="noreferrer">
+                                <a href="https://slcm.org/give" target="_blank" rel="noreferrer">
                                     Make a Donation
                                 </a>
                             </Button>
@@ -777,7 +777,7 @@ export default function SLCMDashboard() {
                                 className="bg-emerald-700/50 border-2 border-white text-white hover:bg-emerald-600 font-semibold px-8 py-6 text-lg rounded-xl"
                                 asChild
                             >
-                                <a href="https://slcm.org/get-involved" target="_blank" rel="noreferrer">
+                                <a href="https://slcm.org/volunteer" target="_blank" rel="noreferrer">
                                     Volunteer With Us
                                 </a>
                             </Button>
