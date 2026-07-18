@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 
 /**
  * SLCM Budget Tracking Dashboard — Board Draft (static)
@@ -264,45 +264,6 @@ function Donut({ data, title }: { data: Slice[]; title: string }) {
 export default function SLCMBudgetDashboard() {
   const [view, setView] = useState<"quarter" | "annual">("quarter");
 
-  // Donorbox can't be prefilled from a link: only amount/name/email/address are
-  // supported as URL params — the "Write us a comment" field and its checkbox
-  // are not, and it's a third-party origin so we can't script it. Copying the
-  // fund name for the donor to paste is the honest workaround. If Clare enables
-  // Donorbox Designations, replace this with a real deep link.
-  const [copied, setCopied] = useState<{ fund: string; ok: boolean } | null>(null);
-
-  useEffect(() => {
-    if (!copied) return;
-    // Generous: the donation page opens in a new tab, so this confirmation is
-    // read on return rather than immediately.
-    const t = setTimeout(() => setCopied(null), 12000);
-    return () => clearTimeout(t);
-  }, [copied]);
-
-  // Deliberately synchronous. navigator.clipboard.writeText returns a promise
-  // that never settles here: the link opens a new tab in the same gesture, the
-  // document loses focus, and the pending clipboard write hangs — so the state
-  // update never fired and no confirmation appeared. execCommand is deprecated
-  // but resolves inline and returns a real success boolean.
-  const copyFund = (fund: string) => {
-    let ok = false;
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = fund;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.top = "-1000px";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-    } catch {
-      ok = false;
-    }
-    setCopied({ fund, ok });
-  };
-
   const rows = useMemo(() => {
     return CATEGORIES.map((c) => {
       const goal = view === "quarter" ? c.qGoal : c.annual;
@@ -433,24 +394,6 @@ export default function SLCMBudgetDashboard() {
                   <span className="goal">of {usd(r.goal)}</span>
                   <span className="pctbadge">{r.funded}%</span>
                 </div>
-                {/* Anchor, not a button + window.open: native target="_blank"
-                    is never caught by a popup blocker, and the copy runs in the
-                    same user gesture. */}
-                <a
-                  className={
-                    copied?.fund === r.name ? "fund-give fund-give-copied" : "fund-give"
-                  }
-                  href={LINKS.give}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => copyFund(r.name)}
-                >
-                  {copied?.fund === r.name
-                    ? copied.ok
-                      ? "Copied — paste in comment"
-                      : "Copy failed — type the fund name"
-                    : "Give to this fund"}
-                </a>
               </article>
             ))}
           </div>
@@ -575,22 +518,6 @@ export default function SLCMBudgetDashboard() {
           </article>
         </div>
       </section>
-
-      {copied && (
-        <div className={copied.ok ? "toast" : "toast toast-warn"} role="status" aria-live="polite">
-          {copied.ok ? (
-            <>
-              Copied <strong>&ldquo;{copied.fund}&rdquo;</strong> — paste it into{" "}
-              <em>Write us a comment</em> on the donation form.
-            </>
-          ) : (
-            <>
-              Couldn&rsquo;t copy automatically. Type <strong>&ldquo;{copied.fund}&rdquo;</strong>{" "}
-              into <em>Write us a comment</em> on the donation form.
-            </>
-          )}
-        </div>
-      )}
 
       <footer className="foot">
         <p>
@@ -785,44 +712,6 @@ const CSS = `
 .card-figs .raised { font-size: 18px; font-weight: 800; color: var(--emerald-deep); font-variant-numeric: tabular-nums; }
 .card-figs .goal { font-size: 12px; color: var(--slate); }
 .card-figs .pctbadge { margin-left: auto; font-size: 12px; font-weight: 800; color: var(--amber); font-variant-numeric: tabular-nums; }
-
-.fund-give {
-  display: block;
-  margin-top: 12px;
-  text-align: center;
-  background: var(--emerald);
-  color: #fff;
-  text-decoration: none;
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 8px 12px;
-  border-radius: 999px;
-  transition: background .18s ease;
-}
-.fund-give:hover { background: var(--emerald-deep); }
-.fund-give:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.fund-give-copied { background: var(--amber); color: #17241d; }
-.fund-give-copied:hover { background: #b8931f; }
-
-/* Copy confirmation */
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  z-index: 50;
-  max-width: min(92vw, 460px);
-  background: var(--emerald-deep);
-  color: #fff;
-  font-size: 13px;
-  line-height: 1.45;
-  padding: 12px 18px;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.22);
-}
-.toast strong { font-weight: 800; }
-.toast em { font-style: normal; text-decoration: underline; text-underline-offset: 2px; }
-.toast-warn { background: #8a6d1f; }
 
 .capital .card { background: #fbf9f0; border-color: #ece2c4; }
 
