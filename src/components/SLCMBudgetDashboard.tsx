@@ -24,10 +24,29 @@ const FISCAL = {
   lastUpdated: "July 13, 2026",
 };
 
+const LINKS = {
+  give: "https://slcm.org/give",
+  staff: "https://slcm.org/staff",
+};
+
+// Individual donor names come from Clare's "Income Categories" worksheet. This
+// page is unlisted, but flip to false if the donor wall needs to go name-free
+// before it is shown outside the Board.
+const SHOW_INDIVIDUAL_DONOR_NAMES = true;
+
 // ---- Operating categories (REAL DATA) -------------------------------------
 // raised = "How much raised 7/13"; qGoal = projected quarterly goal; annual = projected annual
-const CATEGORIES = [
-  { name: "Staff / Team Compensation", annual: 613060, qGoal: 153265, raised: 40000, group: "People" },
+type Category = {
+  name: string;
+  annual: number;
+  qGoal: number;
+  raised: number;
+  group: string;
+  link?: string;
+};
+
+const CATEGORIES: Category[] = [
+  { name: "Staff / Team Compensation", annual: 613060, qGoal: 153265, raised: 40000, group: "People", link: LINKS.staff },
   { name: "Health Care & Staff Benefits", annual: 179813, qGoal: 44953, raised: 6868, group: "People" },
   { name: "Administrative Costs", annual: 53744, qGoal: 13436, raised: 750, group: "Operations" },
   { name: "Accessibility: Interpretation & Ride Share", annual: 5000, qGoal: 1250, raised: 0, group: "Direct Assistance" },
@@ -51,8 +70,98 @@ const CAPITAL = [
   { name: "Beechmont Club — Renovations", annual: 150000, raised: 0 },
 ];
 
-// ---- Income mix (SAMPLE dollar splits — awaiting real totals) --------------
-// Categories mirror Clare's Canva mock. Percentages are illustrative only.
+// ---- Income sources: donor wall (Canva p.2) -------------------------------
+// Columns and the two known totals come from Clare's Canva page 2. Donor names
+// come from the "Income Categories" worksheet, mapped to her column labels:
+//   Churches = Institutional Giving · Donations = Individual Donor
+// Corporate Giving names exist ONLY in the Canva (no rows in the worksheet);
+// Earned Income has one entry in the "Income totals as of 7/13" tab.
+// total: null = Clare has not supplied a figure yet — rendered as pending,
+// never invented.
+type Donor = { name: string; monthly?: boolean };
+type IncomeColumn = { label: string; total: number | null; donors: Donor[] };
+
+const INCOME_COLUMNS: IncomeColumn[] = [
+  {
+    label: "Corporate Giving",
+    total: 18400,
+    donors: [
+      { name: "LG&E and KU Energy" },
+      { name: "Louisville Water Company" },
+      { name: "Taylor Blvd. Save-A-Lot" },
+    ],
+  },
+  {
+    label: "Churches",
+    total: null,
+    donors: [{ name: "Second Presbyterian Church" }, { name: "Ninth & O Baptist Church" }],
+  },
+  {
+    label: "Donations",
+    total: null,
+    donors: [
+      { name: "Jerry and Madeline Abramson" },
+      { name: "Tracie Anderson" },
+      { name: "Susan Applegate" },
+      { name: "Debra Braaksma", monthly: true },
+      { name: "Becky Burnside" },
+      { name: "Marianne Butler" },
+      { name: "Charles Caffey" },
+      { name: "Louis and Margie Clark" },
+      { name: "Lydia Cox", monthly: true },
+      { name: "Kate Cunningham" },
+      { name: "Jim and Marda Dewey" },
+      { name: "Amy Elam-Krizan", monthly: true },
+      { name: "John and Catherine Ford" },
+      { name: "Dan Franklin" },
+      { name: "John Garrison", monthly: true },
+      { name: "LG Ebel Endowment" },
+      { name: "Mary Martin-Mabry", monthly: true },
+      { name: "Jason Matthews", monthly: true },
+      { name: "Melanie McCool" },
+      { name: "Jennifer Nunn", monthly: true },
+      { name: "Linda Parry", monthly: true },
+      { name: "Loren Powell and Ilse Apestegui", monthly: true },
+      { name: "Shannon Queenan and Don Pitts", monthly: true },
+      { name: "Ann Ramser" },
+      { name: "Deanna and James Ray" },
+      { name: "Nancy Robinson" },
+      { name: "Beth Sample" },
+      { name: "William and Mary Alice Stewart" },
+      { name: "Stephen Stormes and Susan Rogers" },
+      { name: "Jim Thornberry" },
+      { name: "James Todd", monthly: true },
+      { name: "Mary Jane Weber" },
+      { name: "Dennis and Denise Weber" },
+      { name: "James Welding" },
+    ],
+  },
+  {
+    label: "Philanthropy",
+    total: null,
+    donors: [
+      { name: "Eleemosynary by LMH" },
+      { name: "Gheens Foundation" },
+      { name: "Jewish Heritage Fund" },
+      { name: "Sisters of Charity of Nazareth" },
+    ],
+  },
+  {
+    label: "Earned Income",
+    total: null,
+    donors: [{ name: "Rosewater Sales" }],
+  },
+];
+
+const GOVERNMENT: IncomeColumn = {
+  label: "Our Government Partners",
+  total: 144000,
+  donors: [{ name: "Louisville Metro Government" }],
+};
+
+// ---- Income mix donuts (Canva p.3) ----------------------------------------
+// These percentages are Clare's own figures from the Canva draft — not invented
+// here — but they have not been reconciled against the income worksheet.
 type Slice = { source: string; pct: number; color: string };
 
 const INCOME_MIX: { current: Slice[]; goal: Slice[] } = {
@@ -179,7 +288,9 @@ export default function SLCMBudgetDashboard() {
 
   return (
     <div className="wrap">
-      <style>{CSS}</style>
+      {/* dangerouslySetInnerHTML avoids a hydration mismatch: React escapes the
+          quotes inside font-family differently on the server than the client. */}
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
       {/* Header */}
       <header className="head">
@@ -189,6 +300,13 @@ export default function SLCMBudgetDashboard() {
             <h1>Budget Tracker</h1>
             <p className="sub">
               Where we are against our fundraising goals — by fund, this quarter and across the year.
+            </p>
+            <p className="give-note">
+              Want to give to a specific fund?{" "}
+              <a href={LINKS.give} target="_blank" rel="noopener noreferrer">
+                Give here
+              </a>{" "}
+              and name the fund in the comment section.
             </p>
           </div>
           <div className="toggle" role="tablist" aria-label="Time frame">
@@ -255,9 +373,20 @@ export default function SLCMBudgetDashboard() {
               <article className="card" key={r.name}>
                 <div className="card-top">
                   <h3>{r.name}</h3>
-                  <button className="info" title="Details coming soon" aria-label={`About ${r.name}`}>
-                    i
-                  </button>
+                  {r.link ? (
+                    <a
+                      className="learn"
+                      href={r.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Learn More
+                    </a>
+                  ) : (
+                    <button className="info" title="Details coming soon" aria-label={`About ${r.name}`}>
+                      i
+                    </button>
+                  )}
                 </div>
                 <Meter value={r.funded} />
                 <div className="card-figs">
@@ -294,11 +423,60 @@ export default function SLCMBudgetDashboard() {
         </div>
       </section>
 
-      {/* Income mix */}
+      {/* Where our support comes from — donor wall (Canva p.2) */}
       <section className="income">
         <div className="group-head">
-          <h2>Income Mix</h2>
-          <span className="sample-tag">Sample splits — awaiting final totals</span>
+          <h2>Where Our Support Comes From</h2>
+          <span className="group-tag">{FISCAL.fiscalYear} to date</span>
+        </div>
+
+        <div className="donor-cols">
+          {INCOME_COLUMNS.map((col) => (
+            <div className="donor-col" key={col.label}>
+              <h3>{col.label}</h3>
+              <p className={col.total === null ? "col-total pending" : "col-total"}>
+                {col.total === null ? "Total pending" : `Total: ${usd(col.total)}`}
+              </p>
+              <ul>
+                {col.label === "Donations" && !SHOW_INDIVIDUAL_DONOR_NAMES ? (
+                  <li className="withheld">{col.donors.length} individual donors</li>
+                ) : (
+                  col.donors.map((d) => (
+                    <li key={d.name}>
+                      {d.name}
+                      {d.monthly && <span className="monthly" title="Monthly donor">monthly</span>}
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <div className="gov">
+          <div className="gov-head">
+            <h3>{GOVERNMENT.label}</h3>
+            <span className="col-total">Total: {usd(GOVERNMENT.total ?? 0)}</span>
+          </div>
+          <ul>
+            {GOVERNMENT.donors.map((d) => (
+              <li key={d.name}>{d.name}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="explainer">
+          <span className="explainer-tag">Copy needed</span>
+          <p>
+            Clare&rsquo;s Canva reserves a short narrative here explaining how SLCM&rsquo;s income mix
+            works and why a diversified base matters. Send the paragraph and it drops straight in.
+          </p>
+        </div>
+
+        {/* Income mix donuts — Canva p.3, kept at the bottom of this section */}
+        <div className="group-head mix-head">
+          <h2>Income Mix: Current vs. Goal</h2>
+          <span className="sample-tag">Percentages from Clare&rsquo;s Canva draft — not yet reconciled</span>
         </div>
         <div className="donuts">
           <Donut data={INCOME_MIX.current} title="Current" />
@@ -334,7 +512,9 @@ export default function SLCMBudgetDashboard() {
             <p className="spot-blurb">
               Give to a specific fund and note it in the comments — every gift moves a meter.
             </p>
-            <a className="give" href="#">Give now</a>
+            <a className="give" href={LINKS.give} target="_blank" rel="noopener noreferrer">
+              Give now
+            </a>
           </article>
         </div>
       </section>
@@ -342,8 +522,9 @@ export default function SLCMBudgetDashboard() {
       <footer className="foot">
         <p>
           Draft for Board review · Operating figures from the FY26–27 budget tracker as of{" "}
-          {FISCAL.lastUpdated}. Income-mix percentages are placeholders pending final category
-          totals.
+          {FISCAL.lastUpdated}. Donor names are drawn from the Income Categories worksheet; column
+          totals other than Corporate Giving and Government are still pending, and the income-mix
+          percentages carry over from the Canva draft without reconciliation.
         </p>
       </footer>
     </div>
@@ -387,6 +568,8 @@ const CSS = `
   color: var(--emerald-deep);
 }
 .head .sub { margin: 8px 0 0; color: var(--slate); font-size: 15px; max-width: 46ch; }
+.give-note { margin: 8px 0 0; font-size: 13px; color: var(--slate); max-width: 52ch; }
+.give-note a { color: var(--emerald); font-weight: 700; }
 .head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
 .context { margin: 14px 0 0; font-size: 13px; font-weight: 600; color: var(--ink); }
 .context .muted { color: var(--slate); font-weight: 500; }
@@ -512,6 +695,19 @@ const CSS = `
   cursor: help;
   line-height: 1;
 }
+.learn {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--emerald);
+  text-decoration: none;
+  border: 1px solid #cfe4d6;
+  background: #f2f9f4;
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.learn:hover { background: #e6f3ea; }
 .card-figs { display: flex; align-items: baseline; gap: 6px; margin-top: 12px; }
 .card-figs .raised { font-size: 18px; font-weight: 800; color: var(--emerald-deep); font-variant-numeric: tabular-nums; }
 .card-figs .goal { font-size: 12px; color: var(--slate); }
@@ -519,8 +715,101 @@ const CSS = `
 
 .capital .card { background: #fbf9f0; border-color: #ece2c4; }
 
-/* Income */
+/* Income — donor wall */
 .income { margin-top: 40px; }
+
+.donor-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.donor-col { padding: 18px 16px; border-right: 1px solid var(--line); }
+.donor-col:last-child { border-right: 0; }
+.donor-col h3 {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 800;
+  color: var(--emerald-deep);
+  text-align: center;
+}
+.col-total {
+  margin: 6px 0 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.col-total.pending {
+  color: var(--amber);
+  font-weight: 600;
+  font-style: italic;
+}
+.donor-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.donor-col li {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--slate);
+  text-align: center;
+}
+.donor-col li.withheld { font-style: italic; }
+.monthly {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: 800;
+  color: var(--emerald);
+  background: #eef6f1;
+  border-radius: 999px;
+  padding: 1px 6px;
+  vertical-align: 1px;
+}
+
+.gov {
+  margin-top: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.gov-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gov-head h3 { font-size: 14px; margin: 0; font-weight: 800; color: var(--emerald-deep); }
+.gov-head .col-total { margin: 0; }
+.gov ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.gov li { font-size: 12.5px; color: var(--slate); }
+
+.explainer {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 12px 16px;
+  background: #fbf9f0;
+  border: 1px dashed #ddcf9e;
+  border-radius: 12px;
+}
+.explainer p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--slate); flex: 1; min-width: 240px; }
+.explainer-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-weight: 800;
+  color: var(--amber);
+  background: #fff;
+  border: 1px solid #ece2c4;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.mix-head { margin-top: 34px; }
 .donuts { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
 .donut { margin: 0; text-align: center; }
 .donut figcaption { font-size: 13px; font-weight: 700; color: var(--slate); margin-top: 6px; }
@@ -545,5 +834,7 @@ const CSS = `
 @media (max-width: 640px) {
   .rollup { grid-template-columns: 1fr; }
   .head h1 { font-size: 32px; }
+  .donor-col { border-right: 0; border-bottom: 1px solid var(--line); }
+  .donor-col:last-child { border-bottom: 0; }
 }
 `;
