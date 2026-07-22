@@ -465,18 +465,9 @@ export default function SLCMBudgetDashboard() {
           </ul>
         </div>
 
-        <div className="explainer">
-          <span className="explainer-tag">Copy needed</span>
-          <p>
-            Clare&rsquo;s Canva reserves a short narrative here explaining how SLCM&rsquo;s income mix
-            works and why a diversified base matters. Send the paragraph and it drops straight in.
-          </p>
-        </div>
-
         {/* Income mix donuts — Canva p.3, kept at the bottom of this section */}
         <div className="group-head mix-head">
           <h2>Income Mix: Current vs. Goal</h2>
-          <span className="sample-tag">Percentages from Clare&rsquo;s Canva draft — not yet reconciled</span>
         </div>
         <div className="donuts">
           <Donut data={INCOME_MIX.current} title="Current" />
@@ -519,14 +510,6 @@ export default function SLCMBudgetDashboard() {
         </div>
       </section>
 
-      <footer className="foot">
-        <p>
-          Draft for Board review · Operating figures from the FY26–27 budget tracker as of{" "}
-          {FISCAL.lastUpdated}. Donor names are drawn from the Income Categories worksheet; column
-          totals other than Corporate Giving and Government are still pending, and the income-mix
-          percentages carry over from the Canva draft without reconciliation.
-        </p>
-      </footer>
     </div>
   );
 }
