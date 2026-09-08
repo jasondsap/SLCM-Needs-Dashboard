@@ -1,20 +1,23 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 /**
- * SLCM Budget Tracking Dashboard — Board Draft (static)
- * -----------------------------------------------------
+ * SLCM Budget Tracking Dashboard
+ * ------------------------------
  * Companion to the SLCM Needs dashboard. Tracks the fiscal-year budget by
  * category against what's actually been raised, with a quarterly and annual
  * view plus an income-mix breakdown (Current vs. Goal).
  *
- * All operating numbers below are REAL, pulled from Clare's
- * "Budget Tracker - Expenses" worksheet (as of 7/13).
- * Income-mix dollar splits are LABELED SAMPLE pending real totals from Clare.
+ * DATA SOURCE: when BUDGET_FEED_CSV_URL is set, the expense categories, the
+ * capital campaign, and the donor wall are fetched live from a published
+ * Google Sheet (see "Live feed" below). The static CATEGORIES / CAPITAL /
+ * INCOME_COLUMNS constants are the fallback whenever the feed is empty,
+ * unreachable, or unparseable, and they also supply the things the sheet
+ * does not carry (group, link, column totals).
  *
- * To wire to a live Google Sheet later: replace CATEGORIES / INCOME_MIX with
- * a fetch + parse, same pattern as the Needs dashboard.
+ * The static operating numbers are Clare's "Budget Tracker - Expenses"
+ * worksheet as of 7/13. Income-mix percentages are from her Canva draft.
  */
 
 // ---- Fiscal context -------------------------------------------------------
@@ -33,6 +36,20 @@ const LINKS = {
 // page is unlisted, but flip to false if the donor wall needs to go name-free
 // before it is shown outside the Board.
 const SHOW_INDIVIDUAL_DONOR_NAMES = true;
+
+// ---- Live feed (Google Sheet) ---------------------------------------------
+// Published-to-web CSV link of the "SLCM Budget Dashboard Feed" sheet. That
+// sheet is a one-tab mirror, via IMPORTRANGE, of the two public-safe tabs in
+// Clare's "Budget Tracking Spreadsheet":
+//   columns A..I  = "Budget Tracker - Expenses"  (name, annual, quarterly, raised)
+//   columns K..M  = "Budget Tracker - Income Categories" (Name, Category, Month)
+// Never publish Clare's workbook itself: it holds salary and grant tabs.
+// Leave empty to render the static figures below.
+const BUDGET_FEED_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3gNloyUPkXrjXoMNo0-EExP9B5EfyMLM8219aTvXMn5xJAt6c3AbLcb0Y2d74JbIgWYxi8xQOWFwi/pub?gid=172529556&single=true&output=csv";
+// Optional: if the donor list lives on its own published tab, put that CSV
+// link here. Otherwise it is read from the feed above.
+const BUDGET_DONORS_CSV_URL = "";
 
 // ---- Operating categories (REAL DATA) -------------------------------------
 // raised = "How much raised 7/13"; qGoal = projected quarterly goal; annual = projected annual
@@ -196,6 +213,195 @@ const SPOTLIGHTS = [
   },
 ];
 
+// ---- Live feed parsing ----------------------------------------------------
+// Everything is located by header text (case-insensitive prefix match), so
+// column order in Clare's sheet can change and the "How much raised 7/13"
+// header can be re-dated without breaking anything.
+
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(cell.trim());
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell.trim());
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += ch;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some((c) => c !== "")) rows.push(row);
+  return rows;
+}
+
+const toNumber = (s: string | undefined) => {
+  const n = parseFloat((s || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+
+// "Household/hygiene Supplies" == "Household / Hygiene Supplies", "&" == "and"
+const norm = (s: string) => s.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]/g, "");
+
+const findCol = (headers: string[], prefix: string) =>
+  headers.findIndex((h) => h.toLowerCase().startsWith(prefix));
+
+// Group for a category the static list does not know about.
+function groupFor(name: string): string {
+  const n = name.toLowerCase();
+  if (/staff|team|health|benefit|compensation/.test(n)) return "People";
+  if (/event|campaign|fundrais|communication|marketing/.test(n)) return "Development";
+  if (/assist|fund|pass|purchase|suppl|stipend|accessib|barrier|housing|food/.test(n))
+    return "Direct Assistance";
+  return "Operations";
+}
+
+// Which donor-wall column a sheet Category belongs in (null = not shown).
+function donorColumnFor(category: string): string | null {
+  const c = category.toLowerCase();
+  if (c.includes("individual")) return "Donations";
+  if (c.includes("institutional") || c.includes("church")) return "Churches";
+  if (c.includes("government")) return GOVERNMENT.label;
+  if (c.includes("corporate") || c.includes("business")) return "Corporate Giving";
+  if (c.includes("earned")) return "Earned Income";
+  if (c.includes("philanthrop") || c.includes("foundation") || c.includes("grant")) return "Philanthropy";
+  return null;
+}
+
+// "john garrison" -> "John Garrison"; names with any capitals are left alone.
+const tidyName = (s: string) =>
+  s === s.toLowerCase() ? s.replace(/(^|[\s-])([a-z])/g, (m, sep, ch) => sep + ch.toUpperCase()) : s;
+
+// Sort key: surname of the first person named.
+//   "Loren Powell and Ilse Apestegui" -> "powell"; "Jim and Marda Dewey" -> "dewey".
+const surnameKey = (name: string) => {
+  const first = name.split(/\s+and\s+|\s*&\s*/i)[0].trim().split(/\s+/);
+  const all = name.trim().split(/\s+/);
+  const key = first.length > 1 ? first[first.length - 1] : all[all.length - 1];
+  return (key || name).toLowerCase();
+};
+
+type CapitalItem = { name: string; annual: number; raised: number };
+type Feed = {
+  categories: Category[];
+  capital: CapitalItem[];
+  donorsByColumn: Record<string, Donor[]>;
+};
+
+export function parseFeed(text: string): Feed | null {
+  const rows = parseCSV(text);
+
+  // -- Expenses: header row is the one carrying "Projected Annual ..."
+  const hIdx = rows.findIndex((r) => findCol(r, "projected annual") >= 0);
+  if (hIdx < 0) return null;
+  const headers = rows[hIdx];
+  const annualCol = findCol(headers, "projected annual");
+  const qGoalCol = findCol(headers, "projected quarterly");
+  const raisedCol = findCol(headers, "how much raised");
+  const linkCol = findCol(headers, "link");
+  if (raisedCol < 0) return null;
+  // Clare leaves the name column's header blank; it sits just left of the annual column.
+  const nameCol = Math.max(0, annualCol - 1);
+
+  const categories: Category[] = [];
+  const capital: CapitalItem[] = [];
+  for (const r of rows.slice(hIdx + 1)) {
+    const rawName = (r[nameCol] || "").trim();
+    if (!rawName) continue;
+    const annual = toNumber(r[annualCol]);
+    if (annual <= 0) continue;
+    const raised = toNumber(r[raisedCol]);
+
+    const cap = rawName.match(/^capital campaign:?\s*(.+)$/i);
+    if (cap) {
+      const known = CAPITAL.find((c) => norm(c.name) === norm(cap[1]));
+      capital.push({ name: known?.name ?? cap[1].trim(), annual, raised });
+      continue;
+    }
+
+    const known = CATEGORIES.find((c) => norm(c.name) === norm(rawName));
+    const sheetLink = linkCol >= 0 ? r[linkCol] || "" : "";
+    const qGoal = qGoalCol >= 0 ? toNumber(r[qGoalCol]) : 0;
+    categories.push({
+      name: known?.name ?? rawName,
+      annual,
+      qGoal: qGoal > 0 ? qGoal : annual / 4,
+      raised,
+      group: known?.group ?? groupFor(rawName),
+      link: /^https?:\/\//i.test(sheetLink) ? sheetLink : known?.link,
+    });
+  }
+  if (categories.length === 0) return null;
+
+  // -- Donor wall: header row carrying both "Name" and "Category"
+  const donorsByColumn: Record<string, Donor[]> = {};
+  const dIdx = rows.findIndex((r) => {
+    const l = r.map((c) => c.toLowerCase());
+    return l.includes("name") && l.includes("category");
+  });
+  if (dIdx >= 0) {
+    const dh = rows[dIdx].map((c) => c.toLowerCase());
+    const nCol = dh.indexOf("name");
+    const cCol = dh.indexOf("category");
+    const seen = new Map<string, Donor>();
+    for (const r of rows.slice(dIdx + 1)) {
+      const name = (r[nCol] || "").trim();
+      const category = (r[cCol] || "").trim();
+      if (!name || !category) continue;
+      const column = donorColumnFor(category);
+      if (!column) continue;
+      const monthly = category.toLowerCase().includes("monthly");
+      const key = column + "|" + norm(name);
+      const existing = seen.get(key);
+      if (existing) {
+        if (monthly) existing.monthly = true;
+        continue;
+      }
+      const donor: Donor = monthly ? { name: tidyName(name), monthly: true } : { name: tidyName(name) };
+      seen.set(key, donor);
+      (donorsByColumn[column] = donorsByColumn[column] || []).push(donor);
+    }
+    Object.values(donorsByColumn).forEach((list) =>
+      list.sort((a, b) => surnameKey(a.name).localeCompare(surnameKey(b.name)))
+    );
+  }
+
+  return { categories, capital, donorsByColumn };
+}
+
+async function fetchFeed(): Promise<Feed | null> {
+  const urls = [BUDGET_FEED_CSV_URL, BUDGET_DONORS_CSV_URL].filter(Boolean);
+  const texts = await Promise.all(
+    urls.map(async (url) => {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Budget feed fetch failed: ${res.status}`);
+      return res.text();
+    })
+  );
+  return parseFeed(texts.join("\n"));
+}
+
 // ---- Helpers --------------------------------------------------------------
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -263,13 +469,54 @@ function Donut({ data, title }: { data: Slice[]; title: string }) {
 
 export default function SLCMBudgetDashboard() {
   const [view, setView] = useState<"quarter" | "annual">("quarter");
+  const [feed, setFeed] = useState<Feed | null>(null);
+
+  // Live data: any failure leaves `feed` null and the static figures render.
+  useEffect(() => {
+    if (!BUDGET_FEED_CSV_URL) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const parsed = await fetchFeed();
+        if (!parsed) throw new Error("Budget feed did not contain the expected headers");
+        if (!cancelled) setFeed(parsed);
+      } catch (err) {
+        console.error("Budget feed unavailable; showing static figures.", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const categories = feed?.categories ?? CATEGORIES;
+  const capital = feed?.capital ?? CAPITAL;
+  // Column labels and totals stay static (the sheet has no totals); names come
+  // from the sheet when it lists any for that column, else the static list.
+  const incomeColumns = useMemo(
+    () =>
+      INCOME_COLUMNS.map((col) => ({
+        ...col,
+        donors: feed?.donorsByColumn[col.label]?.length ? feed.donorsByColumn[col.label] : col.donors,
+      })),
+    [feed]
+  );
+  const government = useMemo(
+    () => ({
+      ...GOVERNMENT,
+      donors: feed?.donorsByColumn[GOVERNMENT.label]?.length
+        ? feed.donorsByColumn[GOVERNMENT.label]
+        : GOVERNMENT.donors,
+    }),
+    [feed]
+  );
 
   const rows = useMemo(() => {
-    return CATEGORIES.map((c) => {
+    return categories.map((c) => {
       const goal = view === "quarter" ? c.qGoal : c.annual;
       return { ...c, goal, funded: pct(c.raised, goal) };
     });
-  }, [view]);
+  }, [view, categories]);
 
   const totals = useMemo(() => {
     const goal = rows.reduce((s, r) => s + r.goal, 0);
@@ -330,7 +577,9 @@ export default function SLCMBudgetDashboard() {
         </div>
         <p className="context">
           {view === "quarter" ? FISCAL.quarterLabel : `${FISCAL.fiscalYear} · Full Year`} ·{" "}
-          <span className="muted">Last updated {FISCAL.lastUpdated}</span>
+          <span className="muted">
+            {feed ? "Live from the Budget Tracking Spreadsheet" : `Last updated ${FISCAL.lastUpdated}`}
+          </span>
         </p>
       </header>
 
@@ -354,7 +603,7 @@ export default function SLCMBudgetDashboard() {
       {/* Board context caption */}
       <p className="caption">
         <span className="caption-tag">Early Q1 snapshot</span>
-        Reflects gifts recorded as of {FISCAL.lastUpdated}. Several funds have not yet
+        Reflects gifts recorded {feed ? "in the Budget Tracking Spreadsheet" : `as of ${FISCAL.lastUpdated}`}. Several funds have not yet
         reported activity this quarter, so a $0 meter means "not yet recorded," not
         "off track."
       </p>
@@ -407,7 +656,7 @@ export default function SLCMBudgetDashboard() {
           <span className="group-tag">Tracked separately from operating budget</span>
         </div>
         <div className="cards">
-          {CAPITAL.map((c) => (
+          {capital.map((c) => (
             <article className="card" key={c.name}>
               <div className="card-top">
                 <h3>{c.name}</h3>
@@ -431,7 +680,7 @@ export default function SLCMBudgetDashboard() {
         </div>
 
         <div className="donor-cols">
-          {INCOME_COLUMNS.map((col) => (
+          {incomeColumns.map((col) => (
             <div className="donor-col" key={col.label}>
               <h3>{col.label}</h3>
               <p className={col.total === null ? "col-total pending" : "col-total"}>
@@ -455,11 +704,11 @@ export default function SLCMBudgetDashboard() {
 
         <div className="gov">
           <div className="gov-head">
-            <h3>{GOVERNMENT.label}</h3>
-            <span className="col-total">Total: {usd(GOVERNMENT.total ?? 0)}</span>
+            <h3>{government.label}</h3>
+            <span className="col-total">Total: {usd(government.total ?? 0)}</span>
           </div>
           <ul>
-            {GOVERNMENT.donors.map((d) => (
+            {government.donors.map((d) => (
               <li key={d.name}>{d.name}</li>
             ))}
           </ul>

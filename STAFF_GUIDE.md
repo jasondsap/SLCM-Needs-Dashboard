@@ -169,6 +169,34 @@ The Utility Help will show (lower % = higher priority)
 - Ongoing programs
 - One-time needs
 
+## 💰 Budget Tracker (dashboard.slcm.org/budget)
+
+The Budget Tracker page reads Clare's **Budget Tracking Spreadsheet** — nothing on it is typed in by hand anymore.
+
+### What to edit
+- **"Budget Tracker - Expenses" tab** → the fund cards. Column A is the fund name, then *Projected Annual Amount*, *Projected Quarterly Goals*, and *How much raised …*. The dashboard finds columns by their header text, so you can re-date the "How much raised" header (e.g. "How much raised 9/30") without breaking anything.
+- **"Budget Tracker - Income Categories" tab** → the "Where Our Support Comes From" wall. Columns: *Name*, *Category*, *Month*. Category decides the column a name lands in:
+  - `Individual Donor` → Donations · add ` - Monthly` to get the **monthly** badge
+  - `Institutional Giving` → Churches
+  - `Philanthropy` → Philanthropy
+  - `Corporate Giving` → Corporate Giving
+  - `Earned Income` → Earned Income
+  - `Government` → Our Government Partners
+- Rows whose name starts with `CAPITAL CAMPAIGN:` show up under Capital Campaign instead of the operating funds.
+
+### What stays fixed
+Fund grouping (People / Direct Assistance / Operations / Development), the "Learn More" link on Staff, the column totals on the donor wall, and the income-mix donuts are set in the code. Ask the dashboard maintainer to change those.
+
+### How it reaches the page
+The page does **not** read Clare's workbook directly (it has salary and grant tabs that must stay private). A separate one-tab sheet, **"SLCM Budget Dashboard Feed"**, mirrors just the two tabs above with `IMPORTRANGE` and is published to the web. Never publish the workbook itself.
+
+### Something looks wrong
+- **Old numbers after an edit** — the published feed refreshes every few minutes; hard-refresh the page after ~5 minutes.
+- **Page shows the fallback figures** (header says "Last updated <date>" instead of "Live from the Budget Tracking Spreadsheet") — the feed sheet is unreachable or its headers changed. Open the feed sheet: if it shows `#REF!`, click the cell and choose **Allow access**.
+- **A donor is missing** — check the Category spelling on the Income Categories tab; unknown categories are skipped.
+
+---
+
 ## 📞 Get Help
 
 ### Technical Issues

@@ -98,6 +98,19 @@ git push -u origin main
     - Go to your Vercel project → Settings → Environment Variables
     - Add `NEXT_PUBLIC_GOOGLE_API_KEY` with your API key
 
+## 💰 Connecting the Budget Tracker (/budget)
+
+`/budget` is unlisted and rendered by `src/components/SLCMBudgetDashboard.tsx`. It reads a published CSV the same way the Needs dashboard does, but through a **companion sheet** so that Clare's full workbook (salaries, tax, grant pipeline) is never published.
+
+1. **Create the feed sheet.** In Google Sheets, *File → Import* the file `docs/SLCM Budget Dashboard Feed.csv` (or make a blank sheet and paste the two formulas below). Name it **SLCM Budget Dashboard Feed**.
+   - `A2`: `=IMPORTRANGE("<Budget Tracking Spreadsheet URL>","'Budget Tracker - Expenses'!A1:I40")`
+   - `K2`: `=IMPORTRANGE("<Budget Tracking Spreadsheet URL>","'Budget Tracker - Income Categories'!A1:C200")`
+   - Click each `#REF!` cell once and choose **Allow access**.
+2. **Publish it.** *File → Share → Publish to web* → this sheet → **Comma-separated values (.csv)** → Publish. Copy the link.
+3. **Paste the link** into `BUDGET_FEED_CSV_URL` at the top of `SLCMBudgetDashboard.tsx` and deploy.
+
+If the feed is empty, unreachable, or missing its headers the page silently falls back to the static `CATEGORIES` / `CAPITAL` / `INCOME_COLUMNS` constants, so it never renders blank. Fund groups, links, donor-column totals, and the income-mix donuts are not in the sheet and stay in code. Column matching is by header text (prefix, case-insensitive), so column order and the date in "How much raised 7/13" can change freely.
+
 ## 📝 How Staff Update Needs
 
 ### Current Workflow (Direct Sheet Editing)
