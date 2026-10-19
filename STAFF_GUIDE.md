@@ -174,7 +174,12 @@ The Utility Help will show (lower % = higher priority)
 The Budget Tracker page reads Clare's **Budget Tracking Spreadsheet** — nothing on it is typed in by hand anymore.
 
 ### What to edit
-- **"Budget Tracker - Expenses" tab** → the fund cards. Column A is the fund name, then *Projected Annual Amount*, *Projected Quarterly Goals*, and *How much raised …*. The dashboard finds columns by their header text, so you can re-date the "How much raised" header (e.g. "How much raised 9/30") without breaking anything.
+- **"Budget Tracker - Expenses" tab** → the fund cards. Column A is the fund name, then *Projected Annual Amount*, *Projected Quarterly Goals*, and the raised columns. The dashboard finds columns by their header text, so column order does not matter.
+  - **Raised by quarter** — add one column per quarter headed `Raised Q1`, `Raised Q2`, `Raised Q3`, `Raised Q4`. The Quarterly view shows the current quarter's column; the Annual view adds all four. Do **not** overwrite last quarter's numbers — put the new quarter in its own column. (A single *How much raised …* column still works and is treated as year-to-date.)
+  - **Description** — optional column. Whatever you type shows behind the little **i** icon on that fund's card. Keep it to a sentence or two. Funds with an empty Description get no icon.
+  - **Link** — optional column. A full `https://` address turns into a "Learn More" button on the card.
+  - **Staff by program** — instead of one *Staff / Team Compensation* row, add one row per program named `Staff: <program name>` (e.g. `Staff: KYnship Workforce Development`). They roll up into a single Staff card with a per-program breakdown underneath. Enter program totals only — never individual salaries. If you keep the *Staff / Team Compensation* row too, its numbers are used for the card and the `Staff:` rows are only the breakdown.
+- **Quarter switch** — nothing to flip. The page works out the current quarter from today's date (fiscal year starts July 1), and the header and caption update on their own.
 - **"Budget Tracker - Income Categories" tab** → the "Where Our Support Comes From" wall. Columns: *Name*, *Category*, *Month*. Category decides the column a name lands in:
   - `Individual Donor` → Donations · add ` - Monthly` to get the **monthly** badge
   - `Institutional Giving` → Churches
@@ -185,7 +190,7 @@ The Budget Tracker page reads Clare's **Budget Tracking Spreadsheet** — nothin
 - Rows whose name starts with `CAPITAL CAMPAIGN:` show up under Capital Campaign instead of the operating funds.
 
 ### What stays fixed
-Fund grouping (People / Direct Assistance / Operations / Development), the "Learn More" link on Staff, the column totals on the donor wall, and the income-mix donuts are set in the code. Ask the dashboard maintainer to change those.
+Fund grouping (People / Direct Assistance / Operations / Development), the column totals on the donor wall, and the income-mix donuts are set in the code. Ask the dashboard maintainer to change those.
 
 ### How it reaches the page
 The page does **not** read Clare's workbook directly (it has salary and grant tabs that must stay private). A separate one-tab sheet, **"SLCM Budget Dashboard Feed"**, mirrors just the two tabs above with `IMPORTRANGE` and is published to the web. Never publish the workbook itself.

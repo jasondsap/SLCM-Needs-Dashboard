@@ -21,10 +21,32 @@ import React, { useEffect, useMemo, useState } from "react";
  */
 
 // ---- Fiscal context -------------------------------------------------------
+// The fiscal year starts July 1. The current quarter is derived from today's
+// date; set QUARTER_OVERRIDE (1-4) to pin the page to a specific quarter.
+const QUARTER_OVERRIDE: 1 | 2 | 3 | 4 | null = null;
+
+const QUARTER_SPANS: Record<1 | 2 | 3 | 4, string> = {
+  1: "July 1 – September 30",
+  2: "October 1 – December 31",
+  3: "January 1 – March 31",
+  4: "April 1 – June 30",
+};
+
+export function fiscalQuarter(d: Date) {
+  const m = d.getMonth(); // 0 = Jan
+  const q = Math.floor(((m + 6) % 12) / 3) + 1;
+  const quarter = (QUARTER_OVERRIDE ?? q) as 1 | 2 | 3 | 4;
+  const fyStart = m >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+  return {
+    quarter,
+    quarterLabel: `Quarter ${quarter} · ${QUARTER_SPANS[quarter]}`,
+    fiscalYear: `FY ${fyStart}–${String(fyStart + 1).slice(-2)}`,
+  };
+}
+
 const FISCAL = {
-  quarterLabel: "Quarter 1 · July 1 – September 30",
-  fiscalYear: "FY 2026–27",
-  lastUpdated: "July 13, 2026",
+  ...fiscalQuarter(new Date()),
+  lastUpdated: "July 13, 2026", // date of the static fallback figures below
 };
 
 const LINKS = {
@@ -41,8 +63,10 @@ const SHOW_INDIVIDUAL_DONOR_NAMES = true;
 // Published-to-web CSV link of the "SLCM Budget Dashboard Feed" sheet. That
 // sheet is a one-tab mirror, via IMPORTRANGE, of the two public-safe tabs in
 // Clare's "Budget Tracking Spreadsheet":
-//   columns A..I  = "Budget Tracker - Expenses"  (name, annual, quarterly, raised)
-//   columns K..M  = "Budget Tracker - Income Categories" (Name, Category, Month)
+//   columns A..N  = "Budget Tracker - Expenses"  (name, annual, quarterly,
+//                   Raised Q1..Q4 or "How much raised", Link, Description)
+//   columns P..R  = "Budget Tracker - Income Categories" (Name, Category, Month)
+// Both blocks are located by header text, so their exact position is flexible.
 // Never publish Clare's workbook itself: it holds salary and grant tabs.
 // Leave empty to render the static figures below.
 const BUDGET_FEED_CSV_URL =
@@ -53,14 +77,46 @@ const BUDGET_DONORS_CSV_URL = "";
 
 // ---- Operating categories (REAL DATA) -------------------------------------
 // raised = "How much raised 7/13"; qGoal = projected quarterly goal; annual = projected annual
-type Category = {
+type Quarter = 1 | 2 | 3 | 4;
+type RaisedByQuarter = Partial<Record<Quarter, number>>;
+
+// A program line under a parent fund (e.g. "Staff: KYnship Workforce Development").
+type Program = {
   name: string;
   annual: number;
   qGoal: number;
   raised: number;
+  raisedByQuarter?: RaisedByQuarter;
+};
+
+type Category = {
+  name: string;
+  annual: number;
+  qGoal: number;
+  // "How much raised" column: year-to-date when no per-quarter columns exist.
+  raised: number;
+  // "Raised Q1".."Raised Q4" columns, when the sheet has them.
+  raisedByQuarter?: RaisedByQuarter;
   group: string;
   link?: string;
+  // "Description" column: shown behind the (i) icon on the card.
+  description?: string;
+  programs?: Program[];
 };
+
+// Raised for the chosen view. With per-quarter columns, the quarterly view
+// shows the current quarter's column and the annual view sums all four; the
+// legacy single "How much raised" column is used as-is otherwise.
+function raisedFor(
+  item: { raised: number; raisedByQuarter?: RaisedByQuarter },
+  view: "quarter" | "annual",
+  quarter: Quarter
+) {
+  const byQ = item.raisedByQuarter;
+  if (!byQ || Object.keys(byQ).length === 0) return item.raised;
+  if (view === "quarter") return byQ[quarter] ?? 0;
+  return Object.values(byQ).reduce((s, n) => s + (n || 0), 0);
+}
 
 const CATEGORIES: Category[] = [
   { name: "Staff / Team Compensation", annual: 613060, qGoal: 153265, raised: 40000, group: "People", link: LINKS.staff },
@@ -267,6 +323,32 @@ const norm = (s: string) => s.toLowerCase().replace(/&/g, "and").replace(/[^a-z0
 const findCol = (headers: string[], prefix: string) =>
   headers.findIndex((h) => h.toLowerCase().startsWith(prefix));
 
+// "Raised Q2", "Q2 Raised", "How much raised Q2", "Raised - Quarter 2" ...
+function quarterCols(headers: string[]): Partial<Record<Quarter, number>> {
+  const out: Partial<Record<Quarter, number>> = {};
+  headers.forEach((h, i) => {
+    const l = h.toLowerCase();
+    if (!l.includes("raised")) return;
+    const m = l.match(/\bq(?:uarter)?\s*([1-4])\b/);
+    if (m) out[Number(m[1]) as Quarter] = i;
+  });
+  return out;
+}
+
+// "Staff: KYnship Workforce Development" -> { parent: "Staff / Team Compensation", program: "KYnship ..." }
+// Any "<known fund>: <program>" row nests under that fund; "Staff" is an alias
+// for the compensation line. Capital campaign rows are handled before this.
+function splitProgramRow(rawName: string): { parent: string; program: string } | null {
+  const m = rawName.match(/^([^:]+):\s*(.+)$/);
+  if (!m) return null;
+  const head = norm(m[1]);
+  if (/^(staff|personnel|team|staffteamcompensation|staffcompensation|teamcompensation)$/.test(head)) {
+    return { parent: "Staff / Team Compensation", program: m[2].trim() };
+  }
+  const known = CATEGORIES.find((c) => norm(c.name) === head);
+  return known ? { parent: known.name, program: m[2].trim() } : null;
+}
+
 // Group for a category the static list does not know about.
 function groupFor(name: string): string {
   const n = name.toLowerCase();
@@ -320,18 +402,37 @@ export function parseFeed(text: string): Feed | null {
   const qGoalCol = findCol(headers, "projected quarterly");
   const raisedCol = findCol(headers, "how much raised");
   const linkCol = findCol(headers, "link");
-  if (raisedCol < 0) return null;
+  const descCol = (() => {
+    const i = findCol(headers, "description");
+    return i >= 0 ? i : findCol(headers, "narrative");
+  })();
+  const qCols = quarterCols(headers);
+  const hasQuarterCols = Object.keys(qCols).length > 0;
+  if (raisedCol < 0 && !hasQuarterCols) return null;
+  const readQuarters = (r: string[]): RaisedByQuarter | undefined => {
+    if (!hasQuarterCols) return undefined;
+    const out: RaisedByQuarter = {};
+    (Object.entries(qCols) as [string, number][]).forEach(([q, i]) => {
+      out[Number(q) as Quarter] = toNumber(r[i]);
+    });
+    return out;
+  };
   // Clare leaves the name column's header blank; it sits just left of the annual column.
   const nameCol = Math.max(0, annualCol - 1);
 
   const categories: Category[] = [];
   const capital: CapitalItem[] = [];
+  const programRows: Record<string, Program[]> = {};
   for (const r of rows.slice(hIdx + 1)) {
     const rawName = (r[nameCol] || "").trim();
     if (!rawName) continue;
     const annual = toNumber(r[annualCol]);
     if (annual <= 0) continue;
-    const raised = toNumber(r[raisedCol]);
+    const raisedByQuarter = readQuarters(r);
+    const raised =
+      raisedCol >= 0
+        ? toNumber(r[raisedCol])
+        : Object.values(raisedByQuarter || {}).reduce((s, n) => s + (n || 0), 0);
 
     const cap = rawName.match(/^capital campaign:?\s*(.+)$/i);
     if (cap) {
@@ -340,18 +441,72 @@ export function parseFeed(text: string): Feed | null {
       continue;
     }
 
+    const qGoal = qGoalCol >= 0 ? toNumber(r[qGoalCol]) : 0;
+    const description = descCol >= 0 ? (r[descCol] || "").trim() : "";
+
+    const sub = splitProgramRow(rawName);
+    if (sub) {
+      (programRows[sub.parent] = programRows[sub.parent] || []).push({
+        name: sub.program,
+        annual,
+        qGoal: qGoal > 0 ? qGoal : annual / 4,
+        raised,
+        raisedByQuarter,
+      });
+      continue;
+    }
+
     const known = CATEGORIES.find((c) => norm(c.name) === norm(rawName));
     const sheetLink = linkCol >= 0 ? r[linkCol] || "" : "";
-    const qGoal = qGoalCol >= 0 ? toNumber(r[qGoalCol]) : 0;
     categories.push({
       name: known?.name ?? rawName,
       annual,
       qGoal: qGoal > 0 ? qGoal : annual / 4,
       raised,
+      raisedByQuarter,
       group: known?.group ?? groupFor(rawName),
       link: /^https?:\/\//i.test(sheetLink) ? sheetLink : known?.link,
+      description: description || undefined,
     });
   }
+
+  // Fold program rows into their parent fund. If the sheet also carries a
+  // parent row, its figures win and the programs are just the breakdown;
+  // otherwise the parent is the sum of its programs.
+  for (const [parentName, programs] of Object.entries(programRows)) {
+    const sum = (pick: (p: Program) => number) => programs.reduce((s, p) => s + pick(p), 0);
+    const existing = categories.find((c) => norm(c.name) === norm(parentName));
+    if (existing) {
+      existing.programs = programs;
+      continue;
+    }
+    const known = CATEGORIES.find((c) => norm(c.name) === norm(parentName));
+    const byQ: RaisedByQuarter = {};
+    let anyQ = false;
+    for (const p of programs) {
+      for (const [q, n] of Object.entries(p.raisedByQuarter || {})) {
+        anyQ = true;
+        byQ[Number(q) as Quarter] = (byQ[Number(q) as Quarter] || 0) + (n || 0);
+      }
+    }
+    categories.push({
+      name: known?.name ?? parentName,
+      annual: sum((p) => p.annual),
+      qGoal: sum((p) => p.qGoal),
+      raised: sum((p) => p.raised),
+      raisedByQuarter: anyQ ? byQ : undefined,
+      group: known?.group ?? groupFor(parentName),
+      link: known?.link,
+      programs,
+    });
+  }
+  // A synthesized parent would otherwise land at the end; put every fund back
+  // in the static list's order (names the list doesn't know keep sheet order, last).
+  const order = (n: string) => {
+    const i = CATEGORIES.findIndex((c) => norm(c.name) === norm(n));
+    return i < 0 ? CATEGORIES.length : i;
+  };
+  categories.sort((a, b) => order(a.name) - order(b.name));
   if (categories.length === 0) return null;
 
   // -- Donor wall: header row carrying both "Name" and "Category"
@@ -470,6 +625,7 @@ function Donut({ data, title }: { data: Slice[]; title: string }) {
 export default function SLCMBudgetDashboard() {
   const [view, setView] = useState<"quarter" | "annual">("quarter");
   const [feed, setFeed] = useState<Feed | null>(null);
+  const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   // Live data: any failure leaves `feed` null and the static figures render.
   useEffect(() => {
@@ -514,7 +670,13 @@ export default function SLCMBudgetDashboard() {
   const rows = useMemo(() => {
     return categories.map((c) => {
       const goal = view === "quarter" ? c.qGoal : c.annual;
-      return { ...c, goal, funded: pct(c.raised, goal) };
+      const raised = raisedFor(c, view, FISCAL.quarter);
+      const programs = c.programs?.map((p) => {
+        const pGoal = view === "quarter" ? p.qGoal : p.annual;
+        const pRaised = raisedFor(p, view, FISCAL.quarter);
+        return { name: p.name, goal: pGoal, raised: pRaised, funded: pct(pRaised, pGoal) };
+      });
+      return { ...c, goal, raised, funded: pct(raised, goal), programs };
     });
   }, [view, categories]);
 
@@ -602,9 +764,9 @@ export default function SLCMBudgetDashboard() {
 
       {/* Board context caption */}
       <p className="caption">
-        <span className="caption-tag">Early Q1 snapshot</span>
-        Reflects gifts recorded {feed ? "in the Budget Tracking Spreadsheet" : `as of ${FISCAL.lastUpdated}`}. Several funds have not yet
-        reported activity this quarter, so a $0 meter means "not yet recorded," not
+        <span className="caption-tag">Quarter {FISCAL.quarter} snapshot</span>
+        Reflects gifts recorded {feed ? "in the Budget Tracking Spreadsheet" : `as of ${FISCAL.lastUpdated}`}. Some funds may not
+        have reported activity {view === "quarter" ? "this quarter" : "yet this year"}, so a $0 meter means "not yet recorded," not
         "off track."
       </p>
 
@@ -622,27 +784,57 @@ export default function SLCMBudgetDashboard() {
               <article className="card" key={r.name}>
                 <div className="card-top">
                   <h3>{r.name}</h3>
-                  {r.link ? (
-                    <a
-                      className="learn"
-                      href={r.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Learn More
-                    </a>
-                  ) : (
-                    <button className="info" title="Details coming soon" aria-label={`About ${r.name}`}>
-                      i
-                    </button>
-                  )}
+                  <div className="card-actions">
+                    {r.link && (
+                      <a
+                        className="learn"
+                        href={r.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Learn More
+                      </a>
+                    )}
+                    {r.description && (
+                      <button
+                        type="button"
+                        className={"info" + (openInfo === r.name ? " on" : "")}
+                        title={r.description}
+                        aria-label={`About ${r.name}`}
+                        aria-expanded={openInfo === r.name}
+                        onClick={() => setOpenInfo(openInfo === r.name ? null : r.name)}
+                      >
+                        i
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {r.description && openInfo === r.name && (
+                  <p className="card-note">{r.description}</p>
+                )}
                 <Meter value={r.funded} />
                 <div className="card-figs">
                   <span className="raised">{usd(r.raised)}</span>
                   <span className="goal">of {usd(r.goal)}</span>
                   <span className="pctbadge">{r.funded}%</span>
                 </div>
+                {r.programs && r.programs.length > 0 && (
+                  <ul className="programs" aria-label={`${r.name} by program`}>
+                    {r.programs.map((p) => (
+                      <li key={p.name}>
+                        <div className="program-row">
+                          <span className="program-name">{p.name}</span>
+                          <span className="program-figs">
+                            {usd(p.raised)} <span className="program-of">of {usd(p.goal)}</span>
+                          </span>
+                        </div>
+                        <div className="program-bar" role="img" aria-label={`${p.funded}% funded`}>
+                          <span style={{ width: `${p.funded}%` }} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </article>
             ))}
           </div>
@@ -916,17 +1108,36 @@ const CSS = `
 .card:hover { box-shadow: 0 6px 18px rgba(22,89,61,.08); transform: translateY(-1px); }
 .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 14px; min-height: 38px; }
 .card-top h3 { font-size: 14px; margin: 0; font-weight: 700; line-height: 1.25; }
+.card-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .info {
   flex-shrink: 0;
-  width: 20px; height: 20px;
+  width: 22px; height: 22px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: #f2f6f3;
   color: var(--slate);
   font-size: 11px; font-weight: 800; font-style: italic;
-  cursor: help;
+  cursor: pointer;
   line-height: 1;
 }
+.info:hover, .info.on { background: var(--emerald); border-color: var(--emerald); color: #fff; }
+.card-note {
+  margin: -6px 0 12px;
+  padding: 10px 12px;
+  background: #f2f9f4;
+  border: 1px solid #cfe4d6;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.programs { list-style: none; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px dashed var(--line); display: grid; gap: 9px; }
+.program-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 12px; }
+.program-name { color: var(--ink); font-weight: 600; line-height: 1.3; }
+.program-figs { white-space: nowrap; font-weight: 700; color: var(--emerald-deep); font-variant-numeric: tabular-nums; }
+.program-of { font-weight: 500; color: var(--slate); }
+.program-bar { height: 5px; border-radius: 999px; background: #e7ebe8; overflow: hidden; margin-top: 4px; }
+.program-bar span { display: block; height: 100%; background: var(--emerald); border-radius: 999px; }
 .learn {
   flex-shrink: 0;
   font-size: 11px;
