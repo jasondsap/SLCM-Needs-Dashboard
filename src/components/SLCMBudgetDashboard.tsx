@@ -44,12 +44,12 @@ export function fiscalQuarter(d: Date) {
   };
 }
 
-const FISCAL = {
+export const FISCAL = {
   ...fiscalQuarter(new Date()),
   lastUpdated: "July 13, 2026", // date of the static fallback figures below
 };
 
-const LINKS = {
+export const LINKS = {
   give: "https://slcm.org/give",
   staff: "https://slcm.org/staff",
 };
@@ -57,7 +57,7 @@ const LINKS = {
 // Individual donor names come from Clare's "Income Categories" worksheet. This
 // page is unlisted, but flip to false if the donor wall needs to go name-free
 // before it is shown outside the Board.
-const SHOW_INDIVIDUAL_DONOR_NAMES = true;
+export const SHOW_INDIVIDUAL_DONOR_NAMES = true;
 
 // ---- Live feed (Google Sheet) ---------------------------------------------
 // Published-to-web CSV link of the "SLCM Budget Dashboard Feed" sheet. That
@@ -151,8 +151,8 @@ const CAPITAL = [
 // Earned Income has one entry in the "Income totals as of 7/13" tab.
 // total: null = Clare has not supplied a figure yet — rendered as pending,
 // never invented.
-type Donor = { name: string; monthly?: boolean };
-type IncomeColumn = { label: string; total: number | null; donors: Donor[] };
+export type Donor = { name: string; monthly?: boolean };
+export type IncomeColumn = { label: string; total: number | null; donors: Donor[] };
 
 const INCOME_COLUMNS: IncomeColumn[] = [
   {
@@ -235,9 +235,9 @@ const GOVERNMENT: IncomeColumn = {
 // ---- Income mix donuts (Canva p.3) ----------------------------------------
 // These percentages are Clare's own figures from the Canva draft — not invented
 // here — but they have not been reconciled against the income worksheet.
-type Slice = { source: string; pct: number; color: string };
+export type Slice = { source: string; pct: number; color: string };
 
-const INCOME_MIX: { current: Slice[]; goal: Slice[] } = {
+export const INCOME_MIX: { current: Slice[]; goal: Slice[] } = {
   current: [
     { source: "Government", pct: 22.6, color: "#2f7d5b" },
     { source: "Philanthropy", pct: 24.5, color: "#4c9f70" },
@@ -254,7 +254,7 @@ const INCOME_MIX: { current: Slice[]; goal: Slice[] } = {
   ],
 };
 
-const SPOTLIGHTS = [
+export const SPOTLIGHTS = [
   {
     title: "Jewish Heritage Fund",
     amount: "$100,000",
@@ -558,10 +558,10 @@ async function fetchFeed(): Promise<Feed | null> {
 }
 
 // ---- Helpers --------------------------------------------------------------
-const usd = (n: number) =>
+export const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
-const pct = (raised: number, goal: number) => (goal <= 0 ? 0 : Math.min(100, Math.round((raised / goal) * 100)));
+export const pct = (raised: number, goal: number) => (goal <= 0 ? 0 : Math.min(100, Math.round((raised / goal) * 100)));
 
 // Segmented red→green meter that fills based on % (honors Clare's Canva language)
 function Meter({ value }: { value: number }) {
@@ -622,10 +622,10 @@ function Donut({ data, title }: { data: Slice[]; title: string }) {
   );
 }
 
-export default function SLCMBudgetDashboard() {
-  const [view, setView] = useState<"quarter" | "annual">("quarter");
+// Live feed + derived rows for a given view. Shared by the live page and
+// the design preview so both read the same sheet.
+export function useBudgetData(view: "quarter" | "annual") {
   const [feed, setFeed] = useState<Feed | null>(null);
-  const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   // Live data: any failure leaves `feed` null and the static figures render.
   useEffect(() => {
@@ -694,6 +694,16 @@ export default function SLCMBudgetDashboard() {
     });
     return order.filter((g) => map[g]).map((g) => ({ group: g, items: map[g] }));
   }, [rows]);
+
+  return { feed, rows, totals, groups, capital, incomeColumns, government };
+}
+
+export type BudgetData = ReturnType<typeof useBudgetData>;
+
+export default function SLCMBudgetDashboard() {
+  const [view, setView] = useState<"quarter" | "annual">("quarter");
+  const [openInfo, setOpenInfo] = useState<string | null>(null);
+  const { feed, rows, totals, groups, capital, incomeColumns, government } = useBudgetData(view);
 
   return (
     <div className="wrap">
